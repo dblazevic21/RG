@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vježba 6</title>
+</head>
+<body>
+    <h1>Vježba 6</h1>
+    <h2>Crtanje elipsi</h2>
+
+    <canvas id="canvas1" width="500" height="500" style="border: 5px solid black;">
+        Vaš preglednik ne podržava HTML5 canvas.
+    </canvas>
+
+    <script id="vertex-shader" type="notjs">
+      #version 300 es
+      in vec2 a_vrhXY;
+      uniform mat3 u_mTrans;
+
+      void main() 
+      {
+        vec3 pozicija = u_mTrans * vec3(a_vrhXY, 1.0);
+        gl_Position = vec4(pozicija.xy, 0.0, 1.0);
+      }
+    </script>
+
+    <script id="fragment-shader" type="notjs">
+      #version 300 es
+      precision mediump float;
+      uniform vec4 u_boja;
+      out vec4 bojaPiksela;
+
+      void main() 
+      {
+        bojaPiksela = u_boja;
+      }
+    </script>
+
+    <script src="./vjezba6_4.js" type="module" defer></script>
+</body>
+</html>

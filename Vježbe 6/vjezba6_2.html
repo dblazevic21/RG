@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="hr">
+    <head>
+        <meta charset="UTF-8">
+        <title>WebGL2 - Crtanje trokuta i linija</title>
+
+        <script id="vertex-shader" type="x-shader/x-vertex">
+      #version 300 es
+      in vec2 a_vrhXY;
+
+      void main() {
+        gl_Position = vec4(a_vrhXY, 0, 1);
+      }
+    </script>
+
+    <script id="fragment-shader" type="x-shader/x-fragment">
+      #version 300 es
+      precision mediump float;
+      out vec4 bojaPiksela;
+
+      void main() {
+        bojaPiksela = vec4(0, 1, 0, 1); // RGBA, zadnja komponenta za (ne)prozirnost
+      }
+    </script>
+
+    <script src="vjezba6_2.js" type="module" defer></script>
+    </head>
+
+    <body>
+        <h1>WebGL2 - Crtanje trokuta i linija</h1>
+        <div>
+            <canvas id="slika1" width="500" height="500" style="border:5px solid black">
+                Vaš preglednik ne podržava HTML5 canvas.
+      </canvas>
+        </div>
+    </body>
+</html>
