@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vježba 7</title>
+</head>
+<body>
+    <h1>Vježba 7</h1>
+    <h2>Bojanje pixela WebGL2</h2>
+
+    <canvas id="canvas1" width="500" height="500" style="border: 5px solid black;">
+        Vaš preglednik ne podržava HTML5 canvas.
+    </canvas>
+
+    <script id="vertex-shader" type="notjs">
+      #version 300 es
+      in vec2 a_vrhXY;
+      out vec2 v_vrhXY;
+
+      void main() 
+      {
+        gl_Position = vec4(a_vrhXY, 0, 1);
+        v_vrhXY = a_vrhXY;
+      }
+    </script>
+
+    <script id="fragment-shader" type="notjs">
+      #version 300 es
+      precision mediump float;
+      in vec2 v_vrhXY;
+      out vec4 bojaPiksela;
+
+      void main() 
+      {
+        bojaPiksela = vec4(v_vrhXY.x, 0, 0, 1);
+      }
+    </script>
+
+    <script src="./vjezba7_1.js" type="module" defer></script>
+</body>
+</html>
