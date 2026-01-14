@@ -107,7 +107,7 @@ function WebGLaplikacija()
     gl.uniformMatrix4fv(GPUprogram1.u_mTrans, false, mTrans.lista());
 
     gl.cullFace(gl.BACK);
-    gl.drawArrays(gl.TRIANGLES, 0, vrhovi.length);
+    //gl.drawArrays(gl.TRIANGLES, 0, vrhovi.length);
 
     gl.cullFace(gl.FRONT);
     gl.drawArrays(gl.TRIANGLES, 0, vrhovi.length);

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="hr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Zadaća 8 – Slovo F u 3D</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #ffffff; }
+    h1 { text-align: center; margin: 18px 0 10px; }
+    canvas { display: block; margin: 0 auto 20px; border: 5px solid #000; background: #111; }
+  </style>
+</head>
+
+<body>
+  <h1>Zadaća 8 – Slovo F u 3D</h1>
+
+  <canvas id="canvas" width="800" height="800">
+    Vaš preglednik ne podržava HTML5 canvas.
+  </canvas>
+
+  <script id="vertex-shader" type="notjs">
+    #version 300 es
+    in vec3 a_vrhXYZ;
+    in vec3 a_boja;
+    uniform mat4 u_mTrans;
+    out vec3 v_boja;
+
+    void main() {
+      gl_Position = u_mTrans * vec4(a_vrhXYZ, 1.0);
+      v_boja = a_boja;
+    }
+  </script>
+
+  <script id="fragment-shader" type="notjs">
+    #version 300 es
+    precision highp float;
+    in vec3 v_boja;
+    out vec4 bojaPiksela;
+
+    void main() {
+      bojaPiksela = vec4(v_boja, 1.0);
+    }
+  </script>
+
+  <script src="./zadaca8.js" type="module"></script>
+</body>
+</html>

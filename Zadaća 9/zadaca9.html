@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Zadaća 9 – Vjetrometar (osvjetljavanje)</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #ffffff; }
+    h1 { text-align: center; margin: 18px 0 10px; }
+    canvas { display:block; margin: 0 auto 20px; border:5px solid #000; background:#cfcfcf; }
+  </style>
+</head>
+
+<body>
+  <h1>Zadaća 9 – Vjetrometar (WebGL2, 2 izvora)</h1>
+
+  <canvas id="canvas" width="900" height="650">
+    Vaš preglednik ne podržava HTML5 canvas.
+  </canvas>
+
+  <script id="vertex-shader" type="notjs">
+    #version 300 es
+    precision highp float;
+
+    in vec3 a_vrhXYZ;
+    in vec3 a_normala;
+
+    uniform mat4 u_model;
+    uniform mat4 u_view;
+    uniform mat4 u_proj;
+    uniform mat3 u_normalMat;
+
+    out vec3 v_worldPos;
+    out vec3 v_worldNorm;
+
+    void main() {
+      vec4 wp = u_model * vec4(a_vrhXYZ, 1.0);
+      v_worldPos = wp.xyz;
+      v_worldNorm = normalize(u_normalMat * a_normala);
+      gl_Position = u_proj * u_view * wp;
+    }
+  </script>
+
+  <script id="fragment-shader" type="notjs">
+    #version 300 es
+    precision highp float;
+
+    in vec3 v_worldPos;
+    in vec3 v_worldNorm;
+
+    uniform vec3 u_kameraXYZ;
+
+    uniform vec3 u_izvorXYZ0;
+    uniform vec3 u_boja0;
+
+    uniform vec3 u_izvorXYZ1;
+    uniform vec3 u_boja1;
+
+    uniform vec3 u_color;       // vanjska boja objekta
+    uniform vec3 u_innerColor;  // boja "unutra" (za backface)
+
+    uniform float u_kd;
+    uniform float u_ks;
+    uniform float u_ka;
+    uniform float u_shininess;
+
+    out vec4 bojaPiksela;
+
+    vec3 osvijetli(vec3 Lpos, vec3 Lcol, vec3 N, vec3 V, vec3 baseCol) {
+      vec3 L = normalize(Lpos - v_worldPos);
+      float diff = max(dot(N, L), 0.0);
+
+      float spec = 0.0;
+      if (diff > 0.0) {
+        vec3 R = reflect(-L, N);
+        spec = pow(max(dot(R, V), 0.0), u_shininess);
+      }
+
+      // difuzna je obojana baznom bojom, zrcalna je "bijela" (boja svjetla)
+      vec3 diffuse = u_kd * diff * baseCol;
+      vec3 specular = u_ks * spec * vec3(1.0);
+      return Lcol * (diffuse + specular);
+    }
+
+    void main() {
+      vec3 N = normalize(v_worldNorm);
+      vec3 baseCol = u_color;
+
+      // ako gledamo "unutra" (backface), okreni normalu i koristi drugu boju
+      if (!gl_FrontFacing) {
+        N = -N;
+        baseCol = u_innerColor;
+      }
+
+      vec3 V = normalize(u_kameraXYZ - v_worldPos);
+
+      vec3 col = u_ka * baseCol;
+      col += osvijetli(u_izvorXYZ0, u_boja0, N, V, baseCol);
+      col += osvijetli(u_izvorXYZ1, u_boja1, N, V, baseCol);
+
+      // lagani clamp da ne ode u "izgoreno"
+      col = min(col, vec3(1.0));
+
+      bojaPiksela = vec4(col, 1.0);
+    }
+  </script>
+
+  <script src="./zadaca9.js" type="module"></script>
+</body>
+</html>

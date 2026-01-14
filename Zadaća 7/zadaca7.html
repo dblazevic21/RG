@@ -3,15 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vježba 7</title>
+    <title>Vježba 7 - Usporedba</title>
+    <style>
+        .canvas-container {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            align-items: flex-start;
+        }
+        .canvas-wrapper {
+            text-align: center;
+        }
+    </style>
 </head>
 <body>
     <h1>Vježba 7</h1>
-    <h2>Bojanje pixela WebGL2</h2>
+    <h2>Bojanje pixela WebGL2 - Usporedba</h2>
 
-    <canvas id="canvas1" width="500" height="500" style="border: 5px solid black;">
-        Vaš preglednik ne podržava HTML5 canvas.
-    </canvas>
+    <div class="canvas-container">
+        <div class="canvas-wrapper">
+            <h3>Kocka sa stražnjim poligonima</h3>
+            <canvas id="canvas1" width="500" height="500" style="border: 5px solid black;">
+                Vaš preglednik ne podržava HTML5 canvas.
+            </canvas>
+        </div>
+        <div class="canvas-wrapper">
+            <h3>Kocka bez stražnjih poligona</h3>
+            <canvas id="canvas2" width="500" height="500" style="border: 5px solid black;">
+                Vaš preglednik ne podržava HTML5 canvas.
+            </canvas>
+        </div>
+    </div>
 
     <script id="vertex-shader" type="notjs">
       #version 300 es
