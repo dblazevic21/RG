@@ -1,0 +1,445 @@
+import { pripremiGPUprogram } from "./WebGL.js";
+import MT3D from "./MT3D.js";
+
+function pushTri(out, p0, n0, p1, n1, p2, n2) {
+  out.push(...p0, ...n0, ...p1, ...n1, ...p2, ...n2);
+}
+
+function norm(v) {
+  const L = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / L, v[1] / L, v[2] / L];
+}
+
+// ---------------- GEOMETRIJA ----------------
+
+function makeCylinderSide(r = 1, h = 2, n = 64, inward = false) {
+  const out = [];
+  const y0 = -h / 2;
+  const y1 = h / 2;
+  const d = (2 * Math.PI) / n;
+
+  for (let i = 0; i < n; i++) {
+    const a0 = i * d;
+    const a1 = (i + 1) * d;
+    const c0 = Math.cos(a0), s0 = Math.sin(a0);
+    const c1 = Math.cos(a1), s1 = Math.sin(a1);
+
+    const p00 = [r * c0, y0, r * s0];
+    const p01 = [r * c0, y1, r * s0];
+    const p10 = [r * c1, y0, r * s1];
+    const p11 = [r * c1, y1, r * s1];
+
+    const n0 = inward ? norm([-c0, 0, -s0]) : norm([c0, 0, s0]);
+    const n1 = inward ? norm([-c1, 0, -s1]) : norm([c1, 0, s1]);
+
+    if (!inward) {
+      pushTri(out, p00, n0, p01, n0, p11, n1);
+      pushTri(out, p00, n0, p11, n1, p10, n1);
+    } else {
+      pushTri(out, p00, n0, p11, n1, p01, n0);
+      pushTri(out, p00, n0, p10, n1, p11, n1);
+    }
+  }
+  return new Float32Array(out);
+}
+
+function makeDisk(r = 1, y = 0, n = 64, up = true) {
+  const out = [];
+  const d = (2 * Math.PI) / n;
+  const N = up ? [0, 1, 0] : [0, -1, 0];
+  const c = [0, y, 0];
+
+  for (let i = 0; i < n; i++) {
+    const a0 = i * d;
+    const a1 = (i + 1) * d;
+    const p0 = [r * Math.cos(a0), y, r * Math.sin(a0)];
+    const p1 = [r * Math.cos(a1), y, r * Math.sin(a1)];
+
+    if (up) pushTri(out, c, N, p0, N, p1, N);
+    else    pushTri(out, c, N, p1, N, p0, N);
+  }
+  return new Float32Array(out);
+}
+
+function makeSphere(r = 1, slices = 32, stacks = 16) {
+  const out = [];
+  for (let i = 0; i < stacks; i++) {
+    const t0 = (i / stacks) * Math.PI;
+    const t1 = ((i + 1) / stacks) * Math.PI;
+    for (let j = 0; j < slices; j++) {
+      const p0 = (j / slices) * 2 * Math.PI;
+      const p1 = ((j + 1) / slices) * 2 * Math.PI;
+
+      const a = sph(r, t0, p0);
+      const b = sph(r, t1, p0);
+      const c = sph(r, t1, p1);
+      const d = sph(r, t0, p1);
+
+      const na = norm(a), nb = norm(b), nc = norm(c), nd = norm(d);
+      pushTri(out, a, na, b, nb, c, nc);
+      pushTri(out, a, na, c, nc, d, nd);
+    }
+  }
+  return new Float32Array(out);
+
+  function sph(rr, theta, phi) {
+    const x = rr * Math.cos(phi) * Math.sin(theta);
+    const y = rr * Math.cos(theta);
+    const z = rr * Math.sin(phi) * Math.sin(theta);
+    return [x, y, z];
+  }
+}
+
+function makeHemisphere(r = 1, slices = 32, stacks = 8, inward = false) {
+  const out = [];
+  const tMax = Math.PI / 2;
+  for (let i = 0; i < stacks; i++) {
+    const t0 = (i / stacks) * tMax;
+    const t1 = ((i + 1) / stacks) * tMax;
+    for (let j = 0; j < slices; j++) {
+      const p0 = (j / slices) * 2 * Math.PI;
+      const p1 = ((j + 1) / slices) * 2 * Math.PI;
+
+      const a = sph(r, t0, p0);
+      const b = sph(r, t1, p0);
+      const c = sph(r, t1, p1);
+      const d = sph(r, t0, p1);
+
+      let na = norm(a), nb = norm(b), nc = norm(c), nd = norm(d);
+      if (inward) {
+        na = [-na[0], -na[1], -na[2]];
+        nb = [-nb[0], -nb[1], -nb[2]];
+        nc = [-nc[0], -nc[1], -nc[2]];
+        nd = [-nd[0], -nd[1], -nd[2]];
+      }
+
+      pushTri(out, a, na, b, nb, c, nc);
+      pushTri(out, a, na, c, nc, d, nd);
+    }
+  }
+  return new Float32Array(out);
+
+  function sph(rr, theta, phi) {
+    const x = rr * Math.cos(phi) * Math.sin(theta);
+    const y = rr * Math.cos(theta);
+    const z = rr * Math.sin(phi) * Math.sin(theta);
+    return [x, y, z];
+  }
+}
+
+// ---------- MATRICE (col-major) ----------
+
+// 4x4 * 4x4 (col-major): out = A * B
+function mul4_colMajor(A, B) {
+  const out = new Float32Array(16);
+  for (let c = 0; c < 4; c++) {
+    for (let r = 0; r < 4; r++) {
+      out[c * 4 + r] =
+        A[0 * 4 + r] * B[c * 4 + 0] +
+        A[1 * 4 + r] * B[c * 4 + 1] +
+        A[2 * 4 + r] * B[c * 4 + 2] +
+        A[3 * 4 + r] * B[c * 4 + 3];
+    }
+  }
+  return out;
+}
+
+// normal matrix iz 4x4 (uzima gornji lijevi 3x3, inverz-transponirano)
+function normalMatrixFromMat4_colMajor(m4) {
+  const a00 = m4[0], a01 = m4[4], a02 = m4[8];
+  const a10 = m4[1], a11 = m4[5], a12 = m4[9];
+  const a20 = m4[2], a21 = m4[6], a22 = m4[10];
+
+  const det =
+    a00 * (a11 * a22 - a12 * a21) -
+    a01 * (a10 * a22 - a12 * a20) +
+    a02 * (a10 * a21 - a11 * a20);
+
+  if (Math.abs(det) < 1e-10) {
+    return new Float32Array([1,0,0, 0,1,0, 0,0,1]);
+  }
+
+  const invDet = 1.0 / det;
+
+  const b00 = (a11 * a22 - a12 * a21) * invDet;
+  const b01 = (a02 * a21 - a01 * a22) * invDet;
+  const b02 = (a01 * a12 - a02 * a11) * invDet;
+
+  const b10 = (a12 * a20 - a10 * a22) * invDet;
+  const b11 = (a00 * a22 - a02 * a20) * invDet;
+  const b12 = (a02 * a10 - a00 * a12) * invDet;
+
+  const b20 = (a10 * a21 - a11 * a20) * invDet;
+  const b21 = (a01 * a20 - a00 * a21) * invDet;
+  const b22 = (a00 * a11 - a01 * a10) * invDet;
+
+  // vraćamo inverse transpose => ovdje je već inverse od 3x3,
+  // a layout je col-major:
+  return new Float32Array([
+    b00, b10, b20,
+    b01, b11, b21,
+    b02, b12, b22
+  ]);
+}
+
+function transformPoint_colMajor(m4, v) {
+  return [
+    m4[0] * v[0] + m4[4] * v[1] + m4[8] * v[2] + m4[12],
+    m4[1] * v[0] + m4[5] * v[1] + m4[9] * v[2] + m4[13],
+    m4[2] * v[0] + m4[6] * v[1] + m4[10] * v[2] + m4[14],
+  ];
+}
+
+// ---------------- APP ----------------
+
+window.onload = () => {
+  const canvas = document.getElementById("platno");
+  const gl = canvas.getContext("webgl2");
+  if (!gl) return console.error("WebGL2 not available.");
+
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.enable(gl.DEPTH_TEST);
+  gl.disable(gl.CULL_FACE);
+
+  const program = pripremiGPUprogram(gl, "vertex-shader", "fragment-shader");
+  gl.useProgram(program);
+
+  const aPos = gl.getAttribLocation(program, "a_pos");
+  const aNrm = gl.getAttribLocation(program, "a_nrm");
+
+  const uModel = gl.getUniformLocation(program, "u_model");
+  const uView  = gl.getUniformLocation(program, "u_view");
+  const uProj  = gl.getUniformLocation(program, "u_proj");
+  const uNrm   = gl.getUniformLocation(program, "u_normalMat");
+
+  const uColor   = gl.getUniformLocation(program, "u_color");
+  const uViewPos = gl.getUniformLocation(program, "u_viewPos");
+
+  const uL0 = gl.getUniformLocation(program, "u_lightPos0");
+  const uC0 = gl.getUniformLocation(program, "u_lightCol0");
+  const uL1 = gl.getUniformLocation(program, "u_lightPos1");
+  const uC1 = gl.getUniformLocation(program, "u_lightCol1");
+
+  const uKd = gl.getUniformLocation(program, "u_kd");
+  const uKs = gl.getUniformLocation(program, "u_ks");
+  const uKa = gl.getUniformLocation(program, "u_ka");
+  const uSh = gl.getUniformLocation(program, "u_sh");
+  const uEm = gl.getUniformLocation(program, "u_emissive");
+
+  gl.uniform1f(uKd, 0.9);
+  gl.uniform1f(uKs, 0.6);
+  gl.uniform1f(uKa, 0.15);
+  gl.uniform1f(uSh, 60.0);
+
+  const baseCol  = [0.6, 0.8, 1.0];
+  const innerCol = [1.0, 0.2, 1.0];
+  const bulbLight = [0.4, 0.4, 0.0];
+
+  function createVAO(data) {
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+
+    const vbo = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+
+    const stride = 6 * 4;
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, stride, 0);
+
+    gl.enableVertexAttribArray(aNrm);
+    gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, stride, 3 * 4);
+
+    gl.bindVertexArray(null);
+    return { vao, count: data.length / 6 };
+  }
+
+  // KLJUČ: normalMat iz (VIEW*MODEL), jer sve radimo u view-space
+  function draw(vaoObj, m, viewMat, color, emissive) {
+    const modelMat = m.lista();
+
+    const mv = mul4_colMajor(viewMat, modelMat);
+    const nrmMat = normalMatrixFromMat4_colMajor(mv);
+
+    gl.uniformMatrix4fv(uModel, false, modelMat);
+    gl.uniformMatrix3fv(uNrm, false, nrmMat);
+
+    gl.uniform3fv(uColor, color);
+    gl.uniform3fv(uEm, emissive ?? [0,0,0]);
+
+    gl.bindVertexArray(vaoObj.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, vaoObj.count);
+  }
+
+  function drawCappedCylinder(m, viewMat, color) {
+    draw(GEO.cyl, m, viewMat, color);
+    draw(GEO.diskUp,   new MT3D().mult(m), viewMat, color);
+    draw(GEO.diskDown, new MT3D().mult(m), viewMat, color);
+  }
+
+  // dimenzije
+  const baseR=1.5, baseH=0.25;
+  const baseTopR=0.65, baseTopH=0.2;
+  const poleR=0.18, poleH=3.5;
+  const jointR=0.45, jointLen=1.20;
+  const armR=0.14, armLen=3;
+  const headR=0.35, headLen=1.0;
+  const shadeR=0.8, bulbR=0.5;
+
+  const GEO = {
+    cyl: createVAO(makeCylinderSide(1, 1, 80, false)),
+    diskUp: createVAO(makeDisk(1, 0.5, 80, true)),
+    diskDown: createVAO(makeDisk(1, -0.5, 80, false)),
+    hemisphereOut: createVAO(makeHemisphere(1, 48, 16, false)),
+    hemisphereIn: createVAO(makeHemisphere(1, 48, 16, true)),
+    sphere: createVAO(makeSphere(1, 36, 18)),
+  };
+
+  // kamera
+  const eye = [0.0, 5, 7.8];
+  const center = [0, 2, 0];
+  const aspect = canvas.width / canvas.height;
+  const fovDeg = 45;
+  const near = 1.0;
+  const far = 40.0;
+  const top = near * Math.tan((fovDeg * Math.PI) / 360);
+  const right = top * aspect;
+
+  const viewM = new MT3D().postaviKameru(
+    eye[0], eye[1], eye[2],
+    center[0], center[1], center[2],
+    0, 1, 0
+  );
+  const projM = new MT3D().identitet().persp(-right, right, -top, top, near, far);
+
+  const viewMat = viewM.kameraLista();
+  gl.uniformMatrix4fv(uView, false, viewMat);
+  gl.uniformMatrix4fv(uProj, false, projM.lista());
+
+  // view-space kamera je 0,0,0
+  gl.uniform3fv(uViewPos, new Float32Array([0, 0, 0]));
+
+  const light0W = [12.0, 11.0, 18.0];  // promijeni po želji
+
+  // GLAVNO "headlight" svjetlo fiksno u canvasu
+  gl.uniform3fv(uC0, new Float32Array([1.0, 1.0, 1.0]));
+  //gl.uniform3fv(uL0, new Float32Array([0.0, 0.0, 0.0])); // svjetlo na kameri
+
+  function render(t) {
+    const angleDeg = (t * 20) % 360;
+    const bulbOn = Math.floor(t) % 2 === 0;
+
+    gl.clearColor(0,0,0,1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    // (ostaje stalno, ali nema štete da stoji ovdje)
+    //gl.uniform3fv(uL0, new Float32Array([0.0, 0.0, 0.0]));
+
+    gl.uniform3fv(uL0, new Float32Array([0.0, 0.0, 2.0]));  // malo ispred kamere
+    gl.uniform3fv(uC0, new Float32Array([1.0, 1.0, 1.0]));
+
+
+    //const light0V = transformPoint_colMajor(viewMat, light0W);
+    //gl.uniform3fv(uL0, new Float32Array(light0V));
+
+    const baseRot = new MT3D().rotirajY(angleDeg);
+
+    const baseY = baseH * 0.5;
+    const baseTopY = baseH + baseTopH * 0.5;
+    const poleInset = 0.15;
+    const poleY = baseH + baseTopH + poleH * 0.5 - poleInset;
+    const pivotY = baseH + baseTopH + poleH - 1.0;
+
+    const armTilt = 20;
+    const headTilt = -90;
+
+    const armBase = new MT3D().mult(baseRot);
+    armBase.pomakni(0, pivotY, -0.5);
+    armBase.rotirajZ(armTilt);
+
+    const headBase = new MT3D().mult(armBase);
+    headBase.pomakni(armLen - 0.5, headLen - 0.8, 0);
+    headBase.rotirajZ(headTilt);
+    headBase.pomakni(0, 0.08, 0);
+
+    const shadeBase = new MT3D().mult(headBase);
+    shadeBase.pomakni(headLen + shadeR * 0.15, 0, 0);
+    shadeBase.rotirajZ(90);
+
+    const bulbLightM = new MT3D().mult(shadeBase);
+    bulbLightM.pomakni(0, -shadeR * 0.35 + 0.5, 0);
+
+    const bulbBase = new MT3D().mult(bulbLightM);
+    bulbBase.skaliraj(bulbR * 0.9, bulbR * 1.1, bulbR * 0.9);
+
+    // drugo svjetlo: žarulja (u view-space!)
+    const bulbPosW = transformPoint_colMajor(bulbLightM.lista(), [0, 0, 0]);
+    const bulbPosV = transformPoint_colMajor(viewMat, bulbPosW);
+    gl.uniform3fv(uL1, new Float32Array(bulbPosV));
+    gl.uniform3fv(uC1, new Float32Array(bulbOn ? bulbLight : [0,0,0]));
+
+    // 1) base
+    {
+      const m = new MT3D().mult(baseRot).pomakni(0, baseY, 0).skaliraj(baseR, baseH, baseR);
+      drawCappedCylinder(m, viewMat, baseCol);
+    }
+
+    // 2) base top
+    {
+      const m = new MT3D().mult(baseRot).pomakni(0, baseTopY, 0).skaliraj(baseTopR, baseTopH, baseTopR);
+      drawCappedCylinder(m, viewMat, baseCol);
+    }
+
+    // 3) pole
+    {
+      const m = new MT3D().mult(baseRot).pomakni(0, poleY, 0).skaliraj(poleR, poleH, poleR);
+      drawCappedCylinder(m, viewMat, baseCol);
+    }
+
+    // 4) joint
+    {
+      const m = new MT3D().mult(baseRot);
+      m.pomakni(0, pivotY, -0.20);
+      m.rotirajZ(90);
+      m.rotirajX(90);
+      m.skaliraj(jointR, jointLen, jointR);
+      drawCappedCylinder(m, viewMat, baseCol);
+    }
+
+    // 5) arm
+    {
+      const m = new MT3D().mult(armBase);
+      m.pomakni(armLen * 0.25, 0, 0);
+      m.rotirajZ(90);
+      m.skaliraj(armR, armLen, armR);
+      drawCappedCylinder(m, viewMat, baseCol);
+    }
+
+    // 6) head
+    {
+      const m = new MT3D().mult(headBase);
+      m.pomakni(headLen * 0.5 - 0.5, 0, 0);
+      m.rotirajZ(90);
+      m.skaliraj(headR, headLen, headR);
+      drawCappedCylinder(m, viewMat, baseCol);
+    }
+
+    // shade
+    {
+      const m = new MT3D().mult(shadeBase).skaliraj(shadeR, shadeR - 0.1, shadeR);
+      draw(GEO.hemisphereOut, m, viewMat, baseCol);
+      draw(GEO.hemisphereIn,  m, viewMat, innerCol);
+    }
+
+    // bulb
+    {
+      const emissive = bulbOn ? [0.2, 0.2, 0.0] : [0,0,0];
+      draw(GEO.sphere, bulbBase, viewMat, baseCol, emissive);
+    }
+
+    gl.bindVertexArray(null);
+    requestAnimationFrame((ms) => render(ms * 0.001));
+  }
+
+  requestAnimationFrame((ms) => render(ms * 0.001));
+};
