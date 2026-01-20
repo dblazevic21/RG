@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Kolokvij vježba 1 – Svemirska stanica</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #fff; }
+    h1 { text-align: center; margin: 16px 0 8px; }
+    canvas { display:block; margin: 0 auto 18px; border:4px solid #000; background:#000; }
+  </style>
+</head>
+
+<body>
+  <h1>Kolokvij vježba 1 – Podmornica (WebGL2)</h1>
+
+  <canvas id="canvas" width="800" height="600">
+    Vaš preglednik ne podržava canvas.
+  </canvas>
+
+  <!-- Vertex shader -->
+  <script id="vertex-shader" type="x-shader/x-vertex">
+  #version 300 es
+  precision highp float;
+
+  layout(location=0) in vec3 a_pos;
+  layout(location=1) in vec3 a_nrm;
+
+  uniform mat4 u_M;      // model
+  uniform mat4 u_V;      // view (kamera)
+  uniform mat4 u_P;      // projection
+  uniform mat3 u_N;      // normal matrix (inverse-transpose od MV 3x3)
+
+  out vec3 v_posVS;      // position in view space
+  out vec3 v_nrmVS;      // normal in view space
+
+  void main() {
+    vec4 posVS = u_V * u_M * vec4(a_pos, 1.0);
+    v_posVS = posVS.xyz;
+    v_nrmVS = normalize(u_N * a_nrm);
+    gl_Position = u_P * posVS;
+  }
+
+  </script>
+
+  <!-- Fragment shader: 2 point light + 1 main (tretiramo kao point) + emissive za kugle -->
+  <script id="fragment-shader" type="x-shader/x-fragment">
+  #version 300 es
+  precision highp float;
+
+  struct Light {
+    vec3 posVS;     // pozicija u view-space
+    vec3 ambient;
+    vec3 diffuse;
+    vec3 specular;
+    int  enabled;
+  };
+
+  uniform Light u_L0; // bijelo
+  uniform Light u_L1; // zeleno
+  uniform Light u_L2; // crveno
+
+  uniform vec3 u_matAmbient;
+  uniform vec3 u_matDiffuse;
+  uniform vec3 u_matSpecular;
+  uniform vec3 u_matEmissive;
+  uniform float u_shininess;
+
+  uniform int u_unlit;
+
+  in vec3 v_posVS;
+  in vec3 v_nrmVS;
+
+  out vec4 outColor;
+
+  vec3 applyLight(Light L, vec3 N, vec3 V) {
+    if (L.enabled == 0) return vec3(0.0);
+
+    vec3 Ldir = normalize(L.posVS - v_posVS);
+    float ndl = max(dot(N, Ldir), 0.0);
+
+    vec3 Ia = L.ambient * u_matAmbient;
+    vec3 Id = L.diffuse * u_matDiffuse * ndl;
+
+    vec3 Is = vec3(0.0);
+    if (ndl > 0.0) {
+      vec3 R = reflect(-Ldir, N);
+      float spec = pow(max(dot(R, V), 0.0), u_shininess);
+      Is = L.specular * u_matSpecular * spec;
+    }
+
+    return Ia + Id + Is;
+  }
+
+  void main() {
+    if (u_unlit == 1) {
+      outColor = vec4(u_matDiffuse + u_matEmissive, 1.0);
+      return;
+    }
+
+    vec3 N = normalize(v_nrmVS);
+    vec3 V = normalize(-v_posVS); // kamera je u (0,0,0) u view-space
+
+    vec3 col = vec3(0.0);
+    col += applyLight(u_L0, N, V);
+    col += applyLight(u_L1, N, V);
+    col += applyLight(u_L2, N, V);
+
+    col += u_matEmissive; // “žarulja” efekt
+
+    outColor = vec4(col, 1.0);
+  }
+  </script>
+
+  <!-- Tvoji moduli -->
+  <script type="module" src="./kolokvij_vjezba_4.js"></script>
+</body>
+</html>

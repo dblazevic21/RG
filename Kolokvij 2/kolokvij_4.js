@@ -10,8 +10,6 @@ function norm(v) {
   return [v[0] / L, v[1] / L, v[2] / L];
 }
 
-// ---------------- GEOMETRIJA ----------------
-
 function makeCylinderSide(r = 1, h = 2, n = 64, inward = false) {
   const out = [];
   const y0 = -h / 2;
@@ -61,36 +59,7 @@ function makeDisk(r = 1, y = 0, n = 64, up = true) {
   return new Float32Array(out);
 }
 
-function makeSphere(r = 1, slices = 32, stacks = 16) {
-  const out = [];
-  for (let i = 0; i < stacks; i++) {
-    const t0 = (i / stacks) * Math.PI;
-    const t1 = ((i + 1) / stacks) * Math.PI;
-    for (let j = 0; j < slices; j++) {
-      const p0 = (j / slices) * 2 * Math.PI;
-      const p1 = ((j + 1) / slices) * 2 * Math.PI;
-
-      const a = sph(r, t0, p0);
-      const b = sph(r, t1, p0);
-      const c = sph(r, t1, p1);
-      const d = sph(r, t0, p1);
-
-      const na = norm(a), nb = norm(b), nc = norm(c), nd = norm(d);
-      pushTri(out, a, na, b, nb, c, nc);
-      pushTri(out, a, na, c, nc, d, nd);
-    }
-  }
-  return new Float32Array(out);
-
-  function sph(rr, theta, phi) {
-    const x = rr * Math.cos(phi) * Math.sin(theta);
-    const y = rr * Math.cos(theta);
-    const z = rr * Math.sin(phi) * Math.sin(theta);
-    return [x, y, z];
-  }
-}
-
-function makeHemisphere(r = 1, slices = 32, stacks = 8, inward = false) {
+function makeHemisphere(r = 1, slices = 32, stacks = 8, inward = false, reverseWinding = false) {
   const out = [];
   const tMax = Math.PI / 2;
   for (let i = 0; i < stacks; i++) {
@@ -113,8 +82,13 @@ function makeHemisphere(r = 1, slices = 32, stacks = 8, inward = false) {
         nd = [-nd[0], -nd[1], -nd[2]];
       }
 
-      pushTri(out, a, na, b, nb, c, nc);
-      pushTri(out, a, na, c, nc, d, nd);
+      if (!reverseWinding) {
+        pushTri(out, a, na, b, nb, c, nc);
+        pushTri(out, a, na, c, nc, d, nd);
+      } else {
+        pushTri(out, a, na, c, nc, b, nb);
+        pushTri(out, a, na, d, nd, c, nc);
+      }
     }
   }
   return new Float32Array(out);
@@ -127,9 +101,26 @@ function makeHemisphere(r = 1, slices = 32, stacks = 8, inward = false) {
   }
 }
 
-// ---------- MATRICE (col-major) ----------
+function makeBladeTriangle() {
+  const out = [];
+  const n = [1, 0, 0];
+  const p0 = [0, 0.0, 0.0];
+  const p1 = [0, 0.9, 0.35];
+  const p2 = [0, 0.9, -0.35];
+  pushTri(out, p0, n, p1, n, p2, n);
+  return new Float32Array(out);
+}
 
-// 4x4 * 4x4 (col-major): out = A * B
+function makeCrossLines(len = 0.55, y = -0.5) {
+  const out = [];
+  const n = [0, -1, 0];
+  out.push(-len, y, 0, ...n);
+  out.push( len, y, 0, ...n);
+  out.push(0, y, -len, ...n);
+  out.push(0, y,  len, ...n);
+  return new Float32Array(out);
+}
+
 function mul4_colMajor(A, B) {
   const out = new Float32Array(16);
   for (let c = 0; c < 4; c++) {
@@ -144,7 +135,6 @@ function mul4_colMajor(A, B) {
   return out;
 }
 
-// normal matrix iz 4x4 (uzima gornji lijevi 3x3, inverz-transponirano)
 function normalMatrixFromMat4_colMajor(m4) {
   const a00 = m4[0], a01 = m4[4], a02 = m4[8];
   const a10 = m4[1], a11 = m4[5], a12 = m4[9];
@@ -173,8 +163,6 @@ function normalMatrixFromMat4_colMajor(m4) {
   const b21 = (a01 * a20 - a00 * a21) * invDet;
   const b22 = (a00 * a11 - a01 * a10) * invDet;
 
-  // vraćamo inverse transpose => ovdje je već inverse od 3x3,
-  // a layout je col-major:
   return new Float32Array([
     b00, b10, b20,
     b01, b11, b21,
@@ -189,8 +177,6 @@ function transformPoint_colMajor(m4, v) {
     m4[2] * v[0] + m4[6] * v[1] + m4[10] * v[2] + m4[14],
   ];
 }
-
-// ---------------- APP ----------------
 
 window.onload = () => {
   const canvas = document.getElementById("platno");
@@ -212,30 +198,26 @@ window.onload = () => {
   const uProj  = gl.getUniformLocation(program, "u_proj");
   const uNrm   = gl.getUniformLocation(program, "u_normalMat");
 
-  const uColor   = gl.getUniformLocation(program, "u_color");
-  const uViewPos = gl.getUniformLocation(program, "u_viewPos");
+  const uColor = gl.getUniformLocation(program, "u_color");
+  const uColorBack = gl.getUniformLocation(program, "u_colorBack");
+  const uUseBack = gl.getUniformLocation(program, "u_useBackColor");
+  const uUnlit = gl.getUniformLocation(program, "u_unlit");
 
-  const uL0 = gl.getUniformLocation(program, "u_lightPos0");
-  const uC0 = gl.getUniformLocation(program, "u_lightCol0");
-  const uL1 = gl.getUniformLocation(program, "u_lightPos1");
-  const uC1 = gl.getUniformLocation(program, "u_lightCol1");
+  const uViewPos = gl.getUniformLocation(program, "u_viewPos");
+  const uLightPos0 = gl.getUniformLocation(program, "u_lightPos0");
+  const uLightCol0 = gl.getUniformLocation(program, "u_lightCol0");
 
   const uKd = gl.getUniformLocation(program, "u_kd");
   const uKs = gl.getUniformLocation(program, "u_ks");
   const uKa = gl.getUniformLocation(program, "u_ka");
   const uSh = gl.getUniformLocation(program, "u_sh");
-  const uEm = gl.getUniformLocation(program, "u_emissive");
 
   gl.uniform1f(uKd, 0.9);
   gl.uniform1f(uKs, 0.6);
-  gl.uniform1f(uKa, 0.15);
-  gl.uniform1f(uSh, 60.0);
+  gl.uniform1f(uKa, 0.12);
+  gl.uniform1f(uSh, 70.0);
 
-  const baseCol  = [0.6, 0.8, 1.0];
-  const innerCol = [1.0, 0.2, 1.0];
-  const bulbLight = [0.4, 0.4, 0.0];
-
-  function createVAO(data) {
+  function createVAO(data, mode = gl.TRIANGLES) {
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
 
@@ -251,61 +233,63 @@ window.onload = () => {
     gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, stride, 3 * 4);
 
     gl.bindVertexArray(null);
-    return { vao, count: data.length / 6 };
+    return { vao, count: data.length / 6, mode };
   }
 
-  // KLJUČ: normalMat iz (VIEW*MODEL), jer sve radimo u view-space
-  function draw(vaoObj, m, viewMat, color, emissive) {
+  function draw(vaoObj, m, viewMat, color, backColor, useBack, unlit) {
     const modelMat = m.lista();
-
-    // MV = VIEW * MODEL
     const mv = mul4_colMajor(viewMat, modelMat);
-
-    // normal matrix od MV 
     const nrmMat = normalMatrixFromMat4_colMajor(mv);
 
     gl.uniformMatrix4fv(uModel, false, modelMat);
     gl.uniformMatrix3fv(uNrm, false, nrmMat);
 
     gl.uniform3fv(uColor, color);
-    gl.uniform3fv(uEm, emissive ?? [0,0,0]);
+    gl.uniform3fv(uColorBack, backColor ?? color);
+    gl.uniform1i(uUseBack, useBack ? 1 : 0);
+    gl.uniform1i(uUnlit, unlit ? 1 : 0);
 
     gl.bindVertexArray(vaoObj.vao);
-    gl.drawArrays(gl.TRIANGLES, 0, vaoObj.count);
+    gl.drawArrays(vaoObj.mode, 0, vaoObj.count);
   }
-
-
-  function drawCappedCylinder(m, viewMat, color) {
-    draw(GEO.cyl, m, viewMat, color);
-    draw(GEO.diskUp,   new MT3D().mult(m), viewMat, color);
-    draw(GEO.diskDown, new MT3D().mult(m), viewMat, color);
-  }
-
-  // dimenzije
-  const baseR=1.5, baseH=0.25;
-  const baseTopR=0.65, baseTopH=0.2;
-  const poleR=0.18, poleH=3.5;
-  const jointR=0.45, jointLen=1.20;
-  const armR=0.14, armLen=3;
-  const headR=0.35, headLen=1.0;
-  const shadeR=0.8, bulbR=0.5;
 
   const GEO = {
-    cyl: createVAO(makeCylinderSide(1, 1, 80, false)),
-    diskUp: createVAO(makeDisk(1, 0.5, 80, true)),
-    diskDown: createVAO(makeDisk(1, -0.5, 80, false)),
-    hemisphereOut: createVAO(makeHemisphere(1, 48, 16, false)),
-    hemisphereIn: createVAO(makeHemisphere(1, 48, 16, true)),
-    sphere: createVAO(makeSphere(1, 36, 18)),
+    cyl: createVAO(makeCylinderSide(1, 1, 96, false)),
+    diskUp: createVAO(makeDisk(1, 0.5, 96, true)),
+    diskDown: createVAO(makeDisk(1, -0.5, 96, false)),
+    hemi: createVAO(makeHemisphere(1, 64, 20, false, true)),
+    blade: createVAO(makeBladeTriangle()),
+    lines: createVAO(makeCrossLines(0.55, -0.5), gl.LINES),
   };
 
-  // kamera
-  const eye = [0.0, 5, 7.8];
-  const center = [0, 2, 0];
+  const baseCol = [0.75, 0.75, 0.0];
+  const innerRingCol = [1.0, 0.0, 0.0];
+  const bladeBackCol = [0.0, 1.0, 0.0];
+  const blackCol = [0.0, 0.0, 0.0];
+
+  const hullR = 1.2;
+  const hullLen = 4.2;
+
+  const towerH = 0.7;
+  const towerRx = 0.55;
+  const towerRz = 0.35;
+
+  const axisR = 0.12;
+  const axisLen = 1.0;
+  const axisX = -hullLen / 2 - axisLen / 2 + 0.1;
+
+  const propX = axisX - axisLen / 2 - 0.05;
+  const bladePitch = 30;
+  const ringH = 0.5;
+  const ringOuterR = 1.05;
+  const ringX = propX - 0.1;
+
+  const eye = [5.6, 2.8, 6.0];
+  const center = [0, -0.5, 0];
   const aspect = canvas.width / canvas.height;
   const fovDeg = 45;
   const near = 1.0;
-  const far = 40.0;
+  const far = 30.0;
   const top = near * Math.tan((fovDeg * Math.PI) / 360);
   const right = top * aspect;
 
@@ -320,124 +304,110 @@ window.onload = () => {
   gl.uniformMatrix4fv(uView, false, viewMat);
   gl.uniformMatrix4fv(uProj, false, projM.lista());
 
-  // view-space kamera je 0,0,0
   gl.uniform3fv(uViewPos, new Float32Array([0, 0, 0]));
 
-  const light0W = [12.0, 11.0, 18.0];  // promijeni po želji
+  const lightPosW = [6.0, 5.0, 8.0];
+  const lightPosV = transformPoint_colMajor(viewMat, lightPosW);
+  gl.uniform3fv(uLightPos0, new Float32Array(lightPosV));
+  gl.uniform3fv(uLightCol0, new Float32Array([1.0, 1.0, 1.0]));
 
-  // GLAVNO "headlight" svjetlo fiksno u canvasu
-  gl.uniform3fv(uC0, new Float32Array([1.0, 1.0, 1.0]));
-  //gl.uniform3fv(uL0, new Float32Array([0.0, 0.0, 0.0])); // svjetlo na kameri
+  function drawCappedCylinder(m, viewMat, color) {
+    draw(GEO.cyl, m, viewMat, color);
+    draw(GEO.diskUp, new MT3D().mult(m), viewMat, color);
+    draw(GEO.diskDown, new MT3D().mult(m), viewMat, color);
+  }
 
   function render(t) {
-    const angleDeg = (t * 20) % 360;
-    const bulbOn = Math.floor(t) % 2 === 0;
+    const baseAngle = (t * 20) % 360;
+    const propAngle = (t * 60) % 360;
 
-    gl.clearColor(0,0,0,1);
+    gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    // (ostaje stalno, ali nema štete da stoji ovdje)
-    //gl.uniform3fv(uL0, new Float32Array([0.0, 0.0, 0.0]));
+    const subRot = new MT3D().rotirajY(baseAngle);
 
-    gl.uniform3fv(uL0, new Float32Array([0.0, 0.0, 2.0]));  // malo ispred kamere
-    gl.uniform3fv(uC0, new Float32Array([1.0, 1.0, 1.0]));
-
-    //const light0V = transformPoint_colMajor(viewMat, light0W);
-    //gl.uniform3fv(uL0, new Float32Array(light0V));
-
-    const baseRot = new MT3D().rotirajY(angleDeg);
-
-    const baseY = baseH * 0.5;
-    const baseTopY = baseH + baseTopH * 0.5;
-    const poleInset = 0.15;
-    const poleY = baseH + baseTopH + poleH * 0.5 - poleInset;
-    const pivotY = baseH + baseTopH + poleH - 1.0;
-
-    const armTilt = 20;
-    const headTilt = -90;
-
-    const armBase = new MT3D().mult(baseRot);
-    armBase.pomakni(0, pivotY, -0.5);
-    armBase.rotirajZ(armTilt);
-
-    const headBase = new MT3D().mult(armBase);
-    headBase.pomakni(armLen - 0.5, headLen - 0.8, 0);
-    headBase.rotirajZ(headTilt);
-    headBase.pomakni(0, 0.08, 0);
-
-    const shadeBase = new MT3D().mult(headBase);
-    shadeBase.pomakni(headLen + shadeR * 0.15, 0, 0);
-    shadeBase.rotirajZ(90);
-
-    const bulbLightM = new MT3D().mult(shadeBase);
-    bulbLightM.pomakni(0, -shadeR * 0.35 + 0.5, 0);
-
-    const bulbBase = new MT3D().mult(bulbLightM);
-    bulbBase.skaliraj(bulbR * 0.9, bulbR * 1.1, bulbR * 0.9);
-
-    // drugo svjetlo: žarulja (u view-space!)
-    const bulbPosW = transformPoint_colMajor(bulbLightM.lista(), [0, 0, 0]);
-    const bulbPosV = transformPoint_colMajor(viewMat, bulbPosW);
-    gl.uniform3fv(uL1, new Float32Array(bulbPosV));
-    gl.uniform3fv(uC1, new Float32Array(bulbOn ? bulbLight : [0,0,0]));
-
-    // 1) base
+    // Hull cylinder
     {
-      const m = new MT3D().mult(baseRot).pomakni(0, baseY, 0).skaliraj(baseR, baseH, baseR);
-      drawCappedCylinder(m, viewMat, baseCol);
-    }
-
-    // 2) base top
-    {
-      const m = new MT3D().mult(baseRot).pomakni(0, baseTopY, 0).skaliraj(baseTopR, baseTopH, baseTopR);
-      drawCappedCylinder(m, viewMat, baseCol);
-    }
-
-    // 3) pole
-    {
-      const m = new MT3D().mult(baseRot).pomakni(0, poleY, 0).skaliraj(poleR, poleH, poleR);
-      drawCappedCylinder(m, viewMat, baseCol);
-    }
-
-    // 4) joint
-    {
-      const m = new MT3D().mult(baseRot);
-      m.pomakni(0, pivotY, -0.20);
+      const m = new MT3D().mult(subRot);
       m.rotirajZ(90);
-      m.rotirajX(90);
-      m.skaliraj(jointR, jointLen, jointR);
-      drawCappedCylinder(m, viewMat, baseCol);
+      m.skaliraj(hullR, hullLen, hullR);
+      draw(GEO.cyl, m, viewMat, baseCol);
     }
 
-    // 5) arm
+    // Front hemisphere
     {
-      const m = new MT3D().mult(armBase);
-      m.pomakni(armLen * 0.25, 0, 0);
+      const m = new MT3D().mult(subRot);
+      m.pomakni(hullLen / 2, 0, 0);
+      m.rotirajZ(270);
+      m.skaliraj(hullR, hullR, hullR);
+      draw(GEO.hemi, m, viewMat, baseCol);
+    }
+
+    // Rear hemisphere
+    {
+      const m = new MT3D().mult(subRot);
+      m.pomakni(-hullLen / 2, 0, 0);
       m.rotirajZ(90);
-      m.skaliraj(armR, armLen, armR);
+      m.skaliraj(hullR, hullR, hullR);
+      draw(GEO.hemi, m, viewMat, baseCol);
+    }
+
+    // Conning tower (elliptic cylinder)
+    {
+      const m = new MT3D().mult(subRot);
+      m.pomakni(0.2, hullR + towerH * 0.5 - 0.08, 0);
+      m.skaliraj(towerRx, towerH, towerRz);
       drawCappedCylinder(m, viewMat, baseCol);
     }
 
-    // 6) head
+    // Propulsion axis
     {
-      const m = new MT3D().mult(headBase);
-      m.pomakni(headLen * 0.5 - 0.5, 0, 0);
+      const m = new MT3D().mult(subRot);
+      m.pomakni(axisX - 1, 0, 0);
+      m.rotirajX(propAngle);
       m.rotirajZ(90);
-      m.skaliraj(headR, headLen, headR);
-      drawCappedCylinder(m, viewMat, baseCol);
+      m.skaliraj(axisR, axisLen - 0.3, axisR);
+      draw(GEO.cyl, m, viewMat, baseCol);
     }
 
-    // shade
+    // Axis base disk
     {
-      const m = new MT3D().mult(shadeBase).skaliraj(shadeR, shadeR - 0.1, shadeR);
-      draw(GEO.hemisphereOut, m, viewMat, baseCol);
-      draw(GEO.hemisphereIn,  m, viewMat, innerCol);
+      const m = new MT3D().mult(subRot);
+      m.pomakni(axisX - 1.85, 0, 0);
+      m.rotirajX(propAngle);
+      m.rotirajZ(90);
+      m.skaliraj(axisR, axisLen, axisR);
+      draw(GEO.diskDown, new MT3D().mult(m), viewMat, baseCol);
     }
 
-    // bulb
+    // Black cross lines on axis base
     {
-      const emissive = bulbOn ? [0.2, 0.2, 0.0] : [0,0,0];
-      draw(GEO.sphere, bulbBase, viewMat, baseCol, emissive);
+      const m = new MT3D().mult(subRot);
+      m.pomakni(axisX - 1.85, 0, 0);
+      m.rotirajX(propAngle);
+      m.rotirajZ(90);
+      m.skaliraj(axisR * 2, axisLen, axisR * 2);
+      draw(GEO.lines, new MT3D().mult(m), viewMat, blackCol, blackCol, false, true);
+    }
+
+    // Propeller blades
+    for (let i = 0; i < 3; i++) {
+      const bladeAngle = i * 120;
+      const m = new MT3D().mult(subRot);
+      m.pomakni(axisX - 1.2, 0, 0);
+      m.rotirajX(propAngle + bladeAngle);
+      m.skaliraj(1.0, 1.0, 1.0);
+      m.rotirajY(30);
+      draw(GEO.blade, m, viewMat, baseCol, bladeBackCol, true, false);
+    }
+
+    // Protective ring: one surface, different colors per side
+    {
+      const m = new MT3D().mult(subRot);
+      m.pomakni(ringX - 0.5, 0, 0);
+      m.rotirajZ(90);
+      m.skaliraj(ringOuterR, ringH, ringOuterR);
+      draw(GEO.cyl, m, viewMat, baseCol, innerRingCol, true, false);
     }
 
     gl.bindVertexArray(null);
