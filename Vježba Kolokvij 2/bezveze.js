@@ -5,6 +5,8 @@ import Primitives3D from "./Primitives3D.js";
 import LightingRig2 from "./LightingRig2.js";
 import DrawContext from "./DrawContext.js";
 import { makeAnimator } from "./Animator.js";
+import ShapesUnified from "./ShapesUnified.js";
+
 
 window.onload = () => {
   const canvas = document.getElementById("canvas");
@@ -40,6 +42,12 @@ window.onload = () => {
     center[0], center[1], center[2],
     0, 1, 0
   );
+
+  //shapes
+  const ring = ShapesUnified.hollowCylinderWalls(gl, 2.5, 2.49, 1.25, 80);
+
+  const ringOuterMesh = Primitives3D.createMesh(gl, ring.outer);
+  const ringInnerMesh = Primitives3D.createMesh(gl, ring.inner);
 
   // perspektiva
   const aspect = canvas.width / canvas.height;
@@ -220,22 +228,31 @@ window.onload = () => {
     const ringX = shaftBaseX + 0.55;
 
     // outer (žuti)
-    DC.setMat(YELLOW, 90, [1, 1, 1]);
-    DC.from(base)
-      .pomakni(ringX - 2, 0, 0)
-      .rotirajY(90)
-      .skaliraj(ringR, ringR, ringLen);
+    // DC.setMat(YELLOW, 90, [1, 1, 1]);
+    // DC.from(base)
+    //   .pomakni(ringX - 2, 0, 0)
+    //   .rotirajY(90)
+    //   .skaliraj(ringR, ringR, ringLen);
 
-    DC.withCull(false, () => DC.draw(meshes.ringOuterWall));
+    // DC.withCull(false, () => DC.draw(meshes.ringOuterWall));
 
+    DC.setMat(YELLOW, 90, [1,1,1]);
+    DC.from(base).pomakni(ringX - 2, 0, 0).rotirajY(90);
+    DC.withCull(false, () => DC.draw(ringOuterMesh));
+    
     // inner (crveni) – isto bez culla!
-    DC.setMat(RED_INNER, 90, [1, 1, 1]);
-    DC.from(base)
-      .pomakni(ringX - 2, 0, 0)
-      .rotirajY(90)
-      .skaliraj(ringRinner, ringRinner, ringLen);
+    // DC.setMat(RED_INNER, 90, [1, 1, 1]);
+    // DC.from(base)
+    //   .pomakni(ringX - 2, 0, 0)
+    //   .rotirajY(90)
+    //   .skaliraj(ringRinner, ringRinner, ringLen);
 
-    DC.withCull(false, () => DC.draw(meshes.ringInnerWall));
+    // DC.withCull(false, () => DC.draw(meshes.ringInnerWall));
+
+
+    DC.setMat(RED_INNER, 90, [1,1,1]);
+    DC.from(base).pomakni(ringX - 2, 0, 0).rotirajY(90);
+    DC.withCull(false, () => DC.draw(ringInnerMesh));
 
 
     // ===== ELISA: 3 trokuta (front žut, back zelen) =====
